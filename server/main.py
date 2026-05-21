@@ -2,6 +2,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Optional
 from pydantic import BaseModel
+from datetime import datetime, timedelta
+import uuid
 from mock_data import inventory_items, orders, demand_forecasts, backlog_items, spending_summary, monthly_spending, category_spending, recent_transactions, purchase_orders
 
 app = FastAPI(title="Factory Inventory Management System")
@@ -119,6 +121,42 @@ class CreatePurchaseOrderRequest(BaseModel):
     unit_cost: float
     expected_delivery_date: str
     notes: Optional[str] = None
+
+class RestockingRecommendation(BaseModel):
+    forecast_id: str
+    item_sku: str
+    item_name: str
+    current_demand: int
+    forecasted_demand: int
+    trend: str
+    recommended_quantity: int
+    unit_cost: float
+    total_cost: float
+    priority: str
+    lead_time_days: int
+
+class RestockingOrderItem(BaseModel):
+    item_sku: str
+    item_name: str
+    quantity: int
+    unit_cost: float
+
+class CreateRestockingOrderRequest(BaseModel):
+    items: List[RestockingOrderItem]
+    total_budget: float
+
+class SubmittedOrder(BaseModel):
+    id: str
+    order_number: str
+    items: List[dict]
+    status: str
+    order_date: str
+    expected_delivery: str
+    total_value: float
+    lead_time_days: int
+
+# In-memory store for submitted restocking orders
+submitted_restocking_orders: List[dict] = []
 
 # API endpoints
 @app.get("/")
@@ -303,6 +341,162 @@ def get_monthly_trends():
     result = list(months.values())
     result.sort(key=lambda x: x['month'])
     return result
+
+@app.get("/api/restocking/recommendations")
+def get_restocking_recommendations(budget: float = 50000.0):
+    """Get restocking recommendations based on demand forecasts and available budget"""
+    recommendations = []
+
+    # Build a lookup from inventory by SKU for unit costs
+    inventory_by_sku = {}
+    for item in inventory_items:
+        inventory_by_sku[item["sku"]] = item
+
+    for forecast in demand_forecasts:
+        sku = forecast["item_sku"]
+        inv_item = inventory_by_sku.get(sku)
+
+        if not inv_item:
+            continue
+
+        unit_cost = inv_item["unit_cost"]
+        current_demand = forecast["current_demand"]
+        forecasted_demand = forecast["forecasted_demand"]
+        trend = forecast["trend"]
+
+        # Calculate recommended restock quantity based on demand gap and trend
+        demand_gap = forecasted_demand - current_demand
+        quantity_on_hand = inv_item["quantity_on_hand"]
+        reorder_point = inv_item["reorder_point"]
+
+        # Base quantity: cover the forecasted demand minus what we have
+        recommended_qty = max(0, forecasted_demand - quantity_on_hand)
+
+        # Add safety stock buffer based on trend
+        if trend == "increasing":
+            recommended_qty = int(recommended_qty * 1.2)  # 20% buffer for increasing
+        elif trend == "stable":
+            recommended_qty = int(recommended_qty * 1.05)  # 5% buffer for stable
+
+        # Skip items where we already have enough stock
+        if recommended_qty <= 0:
+            continue
+
+        # Assign priority
+        if trend == "increasing" and quantity_on_hand <= reorder_point:
+            priority = "high"
+        elif trend == "increasing" or quantity_on_hand <= reorder_point:
+            priority = "medium"
+        else:
+            priority = "low"
+
+        # Estimate lead time based on priority
+        if priority == "high":
+            lead_time = 5
+        elif priority == "medium":
+            lead_time = 10
+        else:
+            lead_time = 14
+
+        total_cost = round(recommended_qty * unit_cost, 2)
+
+        recommendations.append({
+            "forecast_id": forecast["id"],
+            "item_sku": sku,
+            "item_name": forecast["item_name"],
+            "current_demand": current_demand,
+            "forecasted_demand": forecasted_demand,
+            "trend": trend,
+            "recommended_quantity": recommended_qty,
+            "unit_cost": unit_cost,
+            "total_cost": total_cost,
+            "priority": priority,
+            "lead_time_days": lead_time
+        })
+
+    # Sort by priority (high first), then by total_cost descending
+    priority_order = {"high": 0, "medium": 1, "low": 2}
+    recommendations.sort(key=lambda r: (priority_order.get(r["priority"], 3), -r["total_cost"]))
+
+    # Filter recommendations to fit within budget using a greedy approach
+    selected = []
+    remaining_budget = budget
+    for rec in recommendations:
+        if rec["total_cost"] <= remaining_budget:
+            selected.append(rec)
+            remaining_budget -= rec["total_cost"]
+
+    return {
+        "recommendations": selected,
+        "total_cost": round(budget - remaining_budget, 2),
+        "remaining_budget": round(remaining_budget, 2),
+        "budget": budget,
+        "max_budget": round(sum(r["total_cost"] for r in recommendations), 2)
+    }
+
+
+@app.post("/api/restocking/orders")
+def create_restocking_order(request: CreateRestockingOrderRequest):
+    """Submit a restocking order based on recommendations"""
+    if not request.items:
+        raise HTTPException(status_code=400, detail="Order must contain at least one item")
+
+    now = datetime.now()
+    order_id = str(uuid.uuid4())[:8]
+    order_number = f"RST-{now.strftime('%Y')}-{str(len(submitted_restocking_orders) + 1).zfill(4)}"
+
+    # Calculate the max lead time among all items to set expected delivery
+    max_lead_time = 14  # default
+    inventory_by_sku = {item["sku"]: item for item in inventory_items}
+
+    order_items = []
+    total_value = 0.0
+    for item in request.items:
+        inv = inventory_by_sku.get(item.item_sku)
+        unit_cost = inv["unit_cost"] if inv else item.unit_cost
+        line_total = round(item.quantity * unit_cost, 2)
+        total_value += line_total
+        order_items.append({
+            "sku": item.item_sku,
+            "name": item.item_name,
+            "quantity": item.quantity,
+            "unit_price": unit_cost
+        })
+
+    # Determine lead time from the recommendations
+    for forecast in demand_forecasts:
+        matching_items = [i for i in request.items if i.item_sku == forecast["item_sku"]]
+        if matching_items:
+            inv = inventory_by_sku.get(forecast["item_sku"])
+            if inv:
+                if forecast["trend"] == "increasing" and inv["quantity_on_hand"] <= inv["reorder_point"]:
+                    max_lead_time = max(max_lead_time, 5)
+                elif forecast["trend"] == "increasing" or inv["quantity_on_hand"] <= inv["reorder_point"]:
+                    max_lead_time = max(max_lead_time, 10)
+
+    expected_delivery = (now + timedelta(days=max_lead_time)).strftime("%Y-%m-%dT%H:%M:%S")
+
+    new_order = {
+        "id": order_id,
+        "order_number": order_number,
+        "items": order_items,
+        "status": "Processing",
+        "order_date": now.strftime("%Y-%m-%dT%H:%M:%S"),
+        "expected_delivery": expected_delivery,
+        "total_value": round(total_value, 2),
+        "lead_time_days": max_lead_time
+    }
+
+    submitted_restocking_orders.append(new_order)
+
+    return new_order
+
+
+@app.get("/api/restocking/orders")
+def get_restocking_orders():
+    """Get all submitted restocking orders"""
+    return submitted_restocking_orders
+
 
 if __name__ == "__main__":
     import uvicorn

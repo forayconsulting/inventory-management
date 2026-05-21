@@ -6,6 +6,9 @@ export default {
     orders: '注文',
     finance: '財務',
     demandForecast: '需要予測',
+    restocking: '補充計画',
+    reports: 'レポート',
+    backlog: 'バックログ',
     companyName: '触媒コンポーネンツ',
     subtitle: '在庫管理システム'
   },
@@ -188,6 +191,44 @@ export default {
     }
   },
 
+  // Restocking
+  restocking: {
+    title: '補充計画',
+    description: '需要予測と利用可能な予算に基づいて補充注文を計画',
+    budget: '利用可能な予算',
+    totalCost: '合計コスト',
+    remainingBudget: '残り予算',
+    itemsSelected: '選択品目数',
+    recommendations: '推奨品目',
+    noRecommendations: '現在の予算では補充推奨品目がありません。予算を増やしてみてください。',
+    placeOrder: '補充注文を発注',
+    orderPlaced: '補充注文が正常に送信されました',
+    orderFailed: '補充注文の送信に失敗しました',
+    confirmOrder: 'この補充注文を送信しますか？',
+    leadTime: 'リードタイム',
+    days: '日',
+    recommendedQty: '推奨数量',
+    unitCost: '単価',
+    lineCost: '明細コスト',
+    submittedOrders: '送信済み補充注文',
+    noSubmittedOrders: 'まだ補充注文は送信されていません。',
+    orderNumber: '注文番号',
+    orderDate: '注文日',
+    expectedDelivery: '予定配達日',
+    totalValue: '合計金額',
+    status: 'ステータス',
+    table: {
+      sku: 'SKU',
+      itemName: '品目名',
+      trend: 'トレンド',
+      priority: '優先度',
+      quantity: '数量',
+      unitCost: '単価',
+      totalCost: '合計コスト',
+      leadTime: 'リードタイム'
+    }
+  },
+
   // Filters
   filters: {
     timePeriod: '期間',
@@ -309,6 +350,52 @@ export default {
     english: 'English',
     japanese: '日本語',
     selectLanguage: '言語を選択'
+  },
+
+  // Reports
+  reports: {
+    title: '業績レポート',
+    description: '四半期業績指標と月次トレンドの表示',
+    quarterlyPerformance: '四半期業績',
+    monthlyRevenueTrend: '月次収益トレンド',
+    monthOverMonth: '前月比分析',
+    quarter: '四半期',
+    totalOrders: '総注文数',
+    totalRevenue: '総収益',
+    avgOrderValue: '平均注文額',
+    fulfillmentRate: '履行率',
+    month: '月',
+    orders: '注文数',
+    revenue: '収益',
+    change: '変動',
+    growthRate: '成長率',
+    totalRevenueYTD: '総収益（年初来）',
+    avgMonthlyRevenue: '平均月次収益',
+    totalOrdersYTD: '総注文数（年初来）',
+    bestPerformingQuarter: '最優秀四半期',
+    loadError: 'レポートの読み込みに失敗しました'
+  },
+
+  // Backlog
+  backlog: {
+    title: 'バックログ管理',
+    description: '在庫不足の追跡と解決',
+    highPriority: '高優先度',
+    mediumPriority: '中優先度',
+    lowPriority: '低優先度',
+    totalBacklogItems: '総バックログ品目数',
+    backlogItems: 'バックログ品目',
+    noBacklog: 'バックログなし - すべての注文を履行できます！',
+    orderId: '注文ID',
+    sku: 'SKU',
+    itemName: '品目名',
+    quantityNeeded: '必要数量',
+    quantityAvailable: '在庫数量',
+    shortage: '不足',
+    daysDelayed: '遅延日数',
+    priority: '優先度',
+    unitsShort: '単位不足',
+    days: '日'
   },
 
   // Common
